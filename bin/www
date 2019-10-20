@@ -1,0 +1,272 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app = require('../app');
+var debug = require('debug')('realtimetables:server');
+var http = require('http');
+var WebSocket = require('ws');
+const uuid = require("uuid/v4");
+
+/**
+ * 定义变量
+ */
+//在线客户端数量
+var currentClientCount = 0;
+//在线客户端总计
+var clientTotal = 0;
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || '3000');
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+var wss = new WebSocket.Server({ server });
+const idMap = new Map();
+const ipMap = new Map();
+const h5Map = new Map();
+
+/**
+ * 获取客户端IP地址
+ * @param req
+ * @returns {*|number|string|string[]|undefined}
+ */
+function getClientIp(req) {
+    return req.headers['x-forwarded-for'] ||
+        req.connection.remoteAddress ||
+        req.socket.remoteAddress ||
+        req.connection.socket.remoteAddress;
+}
+
+/**
+ * 获取数组随机样本
+ */
+function randomArr(startcount, maxcount) {
+    var arr = [];
+    for (var i = startcount; i < maxcount; i++) {
+        arr.push(i)
+    }
+    return arr;
+}
+
+/**
+ * 根据样本获取指定位数的数组
+ * @param arr
+ * @param maxNum
+ * @returns {[]}
+ * @constructor
+ */
+function RandomNumBoth(arr, maxNum) {
+    var numArr = [];
+    var arrLength = arr.length;
+    for (var i = 0; i < arrLength; i++) {
+        var Rand = arr.length;
+        //取出随机数
+        var number = Math.floor(Math.random() * arr.length); //生成随机数num
+        numArr.push(arr[number]); //往新建的数组里面传入数值
+        arr.splice(number, 1); //传入一个删除一个，避免重复
+        if (arr.length <= arrLength - maxNum) {
+            return numArr;
+        }
+    }
+}
+
+/**
+ * 新增uuid map
+ */
+function addUuidMap(ws,req){
+    // create uuid and add to the idMap
+    ws.uuid = uuid();
+    //获取显示客户端信息
+    var ip = getClientIp(req);
+    ip = ip.match(/\d+\.\d+\.\d+\.\d+/);
+    idMap.set(ws.uuid, ws);
+    ipMap.set(ip, ws);
+    h5Map.set(h5,ws);
+}
+/**
+ * 客户端连接时动作
+ */
+wss.on('connection', function connection(ws, req) {
+    addUuidMap(ws,req);
+    console.log('-------------------------->');
+    // console.log('检测到客户端连接->uuid-->' + ws.uuid);
+    console.log('检测到客户端连接->ip-->' + ip);
+    // console.log('客户端IP地址-->'+ip);
+    //更新客户端计数
+    addClientCounts();
+    clientCounts();
+
+    function checkClientsInfo(idMap) {
+        for (let key of idMap.keys()) {
+            console.log('在线客户端信息：'+key);
+        }
+    }
+
+    checkClientsInfo(idMap);
+
+    /**心跳检测
+     * @type {boolean}
+     */
+    // ws.isAlive = true;
+    // ws.on('pong', heartbeat);
+    // const interval = setInterval(function ping() {
+    //     wss.clients.forEach(function each(ws) {
+    //         if (ws.isAlive === false) {
+    //             console.log('客户端心跳停止：'+ws.uuid);
+    //             return ws.terminate()
+    //         }else {
+    //             // console.log('客户端心跳正常：'+ws.uuid);
+    //         }
+    //         ws.isAlive = false;
+    //         ws.ping(noop);
+    //     });
+    // }, 10000);
+
+    const timer = setInterval(() => {
+        // const info = 'I`m server info';
+        // console.log(info);
+        ws.send(RandomNumBoth(randomArr(1,90),6).toString());
+    }, 1000);
+
+    //收到消息动作
+    ws.on('message', function incoming(message) {
+        console.log('received: %s', message + ' -->From IP:'+ip);
+        ws.send('ok');
+    });
+    // ws.on('message', function(info) {
+    //     try {
+    //         info = JSON.parse(info);
+    //         if (info.action = "send") {
+    //             let dest = idMap.get(info.targetId);
+    //             if (dest) {
+    //                 dest.send(JSON.stringify({action: "message", sender: ws.uuid, data: info.message}));
+    //             }
+    //         }
+    //     } catch(e) {
+    //         console.log("Error processing incoming message", e);
+    //     }
+    // });
+    /**
+     * 检测错误时动作
+     */
+    ws.on('error', function () {
+        console.log('error');
+    });
+    /**
+     * 关闭时动作
+     */
+    ws.on('close', function (reson) {
+        console.log('<<-------------------------');
+        clearInterval(timer);
+        // console.log('客户端已关闭->uuid-->' + ws.uuid, 'reson:' + reson);
+        console.log('客户端已关闭->ip-->' + ip, 'reson:' + reson);
+        // remove from the map
+        idMap.delete(ip);
+        delClientCounts();
+        clientCounts();
+        checkClientsInfo(idMap);
+    });
+});
+
+/**
+ * 心跳检测相关
+ */
+function noop() {}
+
+function heartbeat() {
+    this.isAlive = true;
+    // console.log('pong.')
+}
+
+/**
+ * 在线客户端统计
+ */
+function clientCounts(){
+    console.log('在线客户端数量:' + currentClientCount + '   客户端总计:' + clientTotal);
+}
+function addClientCounts(){
+    currentClientCount++;
+    clientTotal++;
+}
+function delClientCounts(){
+    currentClientCount--;
+}
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+server.listen(port, function listening() {
+    console.log('Websocket server is started，port is：' + port)
+});
+// server.on('error', onError);
+// server.on('listening', onListening);
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+}
